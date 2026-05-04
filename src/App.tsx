@@ -8,7 +8,8 @@ import {
   Settings,
   Phone,
   Type,
-  Trash2
+  Trash2,
+  ClipboardPaste
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
@@ -81,6 +82,21 @@ const App: React.FC = () => {
     }
 
     return { cleaned: phoneNumber.number.replace('+', ''), valid: true };
+  };
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const result = cleanAndValidate(text);
+      if (result.cleaned) {
+        setPhone(result.cleaned);
+        if (!result.valid) setError("Found number but format might be off");
+      } else {
+        setError("No phone number found in clipboard");
+      }
+    } catch (err) {
+      setError("Clipboard permission denied");
+    }
   };
 
   const handleAction = (type: 'message' | 'qr') => {
@@ -166,6 +182,16 @@ const App: React.FC = () => {
                   />
                   {error && <p className="text-red-500 text-[10px] mt-1 absolute left-1">{error}</p>}
                 </div>
+                <button
+                  onClick={handlePaste}
+                  title="Paste from clipboard"
+                  className={cn(
+                    "p-3 rounded-xl border transition-all active:scale-95 flex items-center justify-center",
+                    isDarkMode ? "bg-slate-900 border-slate-700 hover:bg-slate-800" : "bg-white border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  <ClipboardPaste size={20} className="text-emerald-500" />
+                </button>
               </div>
             </div>
 
