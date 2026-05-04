@@ -9,12 +9,21 @@ import {
   Phone,
   Type,
   Trash2,
-  ClipboardPaste
+  ClipboardPaste,
+  Cloud,
+  LogOut
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { 
+  SignedIn, 
+  SignedOut, 
+  SignInButton, 
+  UserButton, 
+  useUser 
+} from '@clerk/clerk-react';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -40,6 +49,7 @@ const COUNTRY_CODES = [
 ];
 
 const App: React.FC = () => {
+  const { user, isLoaded } = useUser();
   const [phone, setPhone] = useState<string>('');
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -48,34 +58,49 @@ const App: React.FC = () => {
   const [showQR, setShowQR] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // Load recent contacts from localStorage
+  // Load recent contacts from localStorage or Clerk
   useEffect(() => {
-    const saved = localStorage.getItem('recent_contacts');
-    if (saved) setRecent(JSON.parse(saved));
-  }, []);
+    if (isLoaded && user) {
+      // Sync from Clerk Metadata
+      const cloudRecent = user.unsafeMetadata.recent as RecentContact[];
+      if (cloudRecent) {
+        setRecent(cloudRecent);
+      }
+    } else {
+      // Fallback to LocalStorage
+      const saved = localStorage.getItem('recent_contacts');
+      if (saved) setRecent(JSON.parse(saved));
+    }
+  }, [isLoaded, user]);
 
-  const saveContact = (num: string) => {
+  const saveContact = async (num: string) => {
     const updated = [
       { phone: num, timestamp: Date.now() },
       ...recent.filter(c => c.phone !== num)
     ].slice(0, 5);
+    
     setRecent(updated);
     localStorage.setItem('recent_contacts', JSON.stringify(updated));
+
+    // Sync to Clerk if logged in
+    if (user) {
+      await user.update({
+        unsafeMetadata: {
+          recent: updated
+        }
+      });
+    }
   };
 
   const cleanAndValidate = (input: string) => {
-    // Smart Parsing: Extract numbers from text if pasted
     const found = input.match(/\+?\d[\d\s-]{7,}\d/);
     const target = found ? found[0] : input;
-    
     let cleaned = target.replace(/\D/g, "");
 
-    // Handle auto-prefixing
     if (cleaned.length === 10 && !target.startsWith('+')) {
       cleaned = selectedCountry.code + cleaned;
     }
 
-    // Advanced validation using libphonenumber
     const phoneNumber = parsePhoneNumberFromString('+' + cleaned);
     if (!phoneNumber?.isValid()) {
       return { cleaned, valid: false, error: "Invalid phone number format" };
@@ -101,7 +126,6 @@ const App: React.FC = () => {
 
   const handleAction = (type: 'message' | 'qr') => {
     const result = cleanAndValidate(phone);
-    
     if (!result.valid) {
       setError(result.error || "Please check the number");
       return;
@@ -117,10 +141,18 @@ const App: React.FC = () => {
     }
   };
 
-  const deleteRecent = (num: string) => {
+  const deleteRecent = async (num: string) => {
     const updated = recent.filter(c => c.phone !== num);
     setRecent(updated);
     localStorage.setItem('recent_contacts', JSON.stringify(updated));
+
+    if (user) {
+      await user.update({
+        unsafeMetadata: {
+          recent: updated
+        }
+      });
+    }
   };
 
   return (
@@ -131,12 +163,30 @@ const App: React.FC = () => {
       <div className="max-w-md w-full space-y-6">
         
         {/* Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 text-emerald-500 mb-2">
-            <MessageSquare size={32} />
+        <div className="flex justify-between items-start mb-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
+                <MessageSquare size={24} />
+              </span>
+              DirectChat
+            </h1>
+            <p className="text-slate-500 text-xs px-1">Cloud Sync Enabled</p>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">DirectChat</h1>
-          <p className="text-slate-500 text-sm">Fast WhatsApp messaging without saving contacts</p>
+          
+          <div className="flex items-center gap-3">
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-2">
+                  <Cloud size={14} className="text-emerald-500" />
+                  Sign In to Sync
+                </button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+          </div>
         </div>
 
         {/* Main Card */}
@@ -144,7 +194,6 @@ const App: React.FC = () => {
           "glass-card rounded-3xl p-6 space-y-6 shadow-2xl relative overflow-hidden",
           !isDarkMode && "bg-white border-slate-200"
         )}>
-          {/* Background Glow */}
           <div className="absolute -top-24 -right-24 w-48 h-48 bg-emerald-500/10 blur-3xl rounded-full" />
           
           <div className="space-y-4 relative">
@@ -241,9 +290,10 @@ const App: React.FC = () => {
                 <History size={12} /> Recent Chats
               </span>
               <button 
-                onClick={() => {
+                onClick={async () => {
                   setRecent([]);
                   localStorage.removeItem('recent_contacts');
+                  if (user) await user.update({ unsafeMetadata: { recent: [] } });
                 }}
                 className="text-[10px] hover:text-red-500 transition-colors"
               >

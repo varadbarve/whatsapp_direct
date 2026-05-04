@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.6",
     "clsx": "^2.1.1",
-    "firebase": "^12.12.1",
     "libphonenumber-js": "^1.12.42",
     "lucide-react": "^0.344.0",
     "qrcode.react": "^4.2.0",
