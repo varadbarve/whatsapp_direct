@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DirectChat</string>
+    <string name="title_activity_main">DirectChat</string>
+    <string name="package_name">com.varad.directchat</string>
+    <string name="custom_url_scheme">com.varad.directchat</string>
+</resources>
