@@ -10,7 +10,10 @@ import {
   Type,
   Trash2,
   ClipboardPaste,
-  Cloud
+  Cloud,
+  Share2,
+  Zap,
+  Sparkles
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
@@ -23,6 +26,7 @@ import {
   UserButton, 
   useUser 
 } from '@clerk/clerk-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -40,11 +44,17 @@ const COUNTRY_CODES = [
   { code: '44', name: 'UK', flag: '🇬🇧' },
   { code: '971', name: 'UAE', flag: '🇦🇪' },
   { code: '61', name: 'Australia', flag: '🇦🇺' },
-  { code: '1', name: 'Canada', flag: '🇨🇦' },
   { code: '49', name: 'Germany', flag: '🇩🇪' },
   { code: '33', name: 'France', flag: '🇫🇷' },
   { code: '81', name: 'Japan', flag: '🇯🇵' },
   { code: '65', name: 'Singapore', flag: '🇸🇬' },
+];
+
+const TEMPLATES = [
+  "Hi, I'm interested in...",
+  "Can you share your location?",
+  "Please call me back when free.",
+  "Thanks for the help!"
 ];
 
 const App: React.FC = () => {
@@ -57,16 +67,23 @@ const App: React.FC = () => {
   const [showQR, setShowQR] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
+  // Haptic Feedback Utility
+  const triggerHaptic = (type: 'light' | 'medium' | 'success' = 'light') => {
+    if (!window.navigator.vibrate) return;
+    
+    switch(type) {
+      case 'light': window.navigator.vibrate(10); break;
+      case 'medium': window.navigator.vibrate(20); break;
+      case 'success': window.navigator.vibrate([10, 30, 10]); break;
+    }
+  };
+
   // Load recent contacts from localStorage or Clerk
   useEffect(() => {
     if (isLoaded && user) {
-      // Sync from Clerk Metadata
       const cloudRecent = user.unsafeMetadata.recent as RecentContact[];
-      if (cloudRecent) {
-        setRecent(cloudRecent);
-      }
+      if (cloudRecent) setRecent(cloudRecent);
     } else {
-      // Fallback to LocalStorage
       const saved = localStorage.getItem('recent_contacts');
       if (saved) setRecent(JSON.parse(saved));
     }
@@ -81,13 +98,8 @@ const App: React.FC = () => {
     setRecent(updated);
     localStorage.setItem('recent_contacts', JSON.stringify(updated));
 
-    // Sync to Clerk if logged in
     if (user) {
-      await user.update({
-        unsafeMetadata: {
-          recent: updated
-        }
-      });
+      await user.update({ unsafeMetadata: { recent: updated } });
     }
   };
 
@@ -102,31 +114,33 @@ const App: React.FC = () => {
 
     const phoneNumber = parsePhoneNumberFromString('+' + cleaned);
     if (!phoneNumber?.isValid()) {
-      return { cleaned, valid: false, error: "Invalid phone number format" };
+      return { cleaned, valid: false, error: "Invalid phone number" };
     }
 
     return { cleaned: phoneNumber.number.replace('+', ''), valid: true };
   };
 
   const handlePaste = async () => {
+    triggerHaptic('light');
     try {
       const text = await navigator.clipboard.readText();
       const result = cleanAndValidate(text);
       if (result.cleaned) {
         setPhone(result.cleaned);
-        if (!result.valid) setError("Found number but format might be off");
+        if (!result.valid) setError("Format might be off");
       } else {
-        setError("No phone number found in clipboard");
+        setError("No number found in clipboard");
       }
     } catch (err) {
-      setError("Clipboard permission denied");
+      setError("Clipboard access denied");
     }
   };
 
   const handleAction = (type: 'message' | 'qr') => {
+    triggerHaptic('medium');
     const result = cleanAndValidate(phone);
     if (!result.valid) {
-      setError(result.error || "Please check the number");
+      setError(result.error || "Check the number");
       return;
     }
 
@@ -134,86 +148,116 @@ const App: React.FC = () => {
     
     if (type === 'message') {
       saveContact(result.cleaned);
+      triggerHaptic('success');
       window.open(whatsappUrl, "_blank", "noopener,noreferrer");
     } else {
       setShowQR(true);
     }
   };
 
-  const deleteRecent = async (num: string) => {
-    const updated = recent.filter(c => c.phone !== num);
-    setRecent(updated);
-    localStorage.setItem('recent_contacts', JSON.stringify(updated));
-
-    if (user) {
-      await user.update({
-        unsafeMetadata: {
-          recent: updated
-        }
-      });
+  const handleShare = async () => {
+    triggerHaptic('medium');
+    const result = cleanAndValidate(phone);
+    const url = `https://wa.me/${result.cleaned}${message ? `?text=${encodeURIComponent(message)}` : ''}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'DirectChat',
+          text: `Chat with me on WhatsApp: ${result.cleaned}`,
+          url: url,
+        });
+      } catch (err) {
+        console.error("Error sharing:", err);
+      }
+    } else {
+      navigator.clipboard.writeText(url);
+      alert("Link copied to clipboard!");
     }
   };
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300 flex items-center justify-center p-4",
+      "min-h-[100dvh] transition-colors duration-500 flex items-center justify-center p-4 selection:bg-emerald-500/30",
       isDarkMode ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900"
     )}>
-      <div className="max-w-md w-full space-y-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full space-y-6"
+      >
         
         {/* Header */}
-        <div className="flex justify-between items-start mb-4">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
-                <MessageSquare size={24} />
-              </span>
-              DirectChat
-            </h1>
-            <p className="text-slate-500 text-xs px-1">Cloud Sync Enabled</p>
+        <div className="flex justify-between items-center px-1">
+          <div className="flex items-center gap-3">
+            <motion.div 
+              whileHover={{ rotate: 10, scale: 1.1 }}
+              className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-500 shadow-lg shadow-emerald-500/10"
+            >
+              <MessageSquare size={24} />
+            </motion.div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">DirectChat</h1>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <p className="text-slate-500 text-[10px] font-medium uppercase tracking-widest">Ready to sync</p>
+              </div>
+            </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <SignedOut>
               <SignInButton mode="modal">
-                <button className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-2">
+                <button className="text-xs bg-slate-900/50 border border-slate-800 hover:bg-slate-800 px-3 py-2 rounded-xl transition-all flex items-center gap-2 tap-highlight-none">
                   <Cloud size={14} className="text-emerald-500" />
-                  Sign In to Sync
+                  Sync
                 </button>
               </SignInButton>
             </SignedOut>
             <SignedIn>
-              <UserButton afterSignOutUrl="/" />
+              <div className="bg-slate-900/50 p-1 rounded-full border border-slate-800">
+                <UserButton afterSignOutUrl="/" />
+              </div>
             </SignedIn>
           </div>
         </div>
 
         {/* Main Card */}
-        <div className={cn(
-          "glass-card rounded-3xl p-6 space-y-6 shadow-2xl relative overflow-hidden",
-          !isDarkMode && "bg-white border-slate-200"
-        )}>
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-emerald-500/10 blur-3xl rounded-full" />
+        <motion.div 
+          layout
+          className={cn(
+            "glass-card rounded-[2.5rem] p-8 space-y-6 shadow-2xl relative overflow-hidden border border-white/5",
+            !isDarkMode && "bg-white border-slate-200"
+          )}
+        >
+          {/* Animated Background Glow */}
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/10 blur-[80px] rounded-full pointer-events-none" />
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none" />
           
-          <div className="space-y-4 relative">
-            {/* Country & Phone Input */}
+          <div className="space-y-5 relative">
+            {/* Phone Input Group */}
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                <Phone size={12} /> Phone Number
+              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 flex items-center gap-2 px-1">
+                <Phone size={10} className="text-emerald-500" /> Phone Number
               </label>
               <div className="flex gap-2">
-                <select 
-                  value={selectedCountry.code}
-                  onChange={(e) => setSelectedCountry(COUNTRY_CODES.find(c => c.code === e.target.value) || COUNTRY_CODES[0])}
-                  className={cn(
-                    "p-3 rounded-xl border appearance-none cursor-pointer focus:ring-2 focus:ring-emerald-500 outline-none transition-all",
-                    isDarkMode ? "bg-slate-900 border-slate-700" : "bg-slate-50 border-slate-200"
-                  )}
-                >
-                  {COUNTRY_CODES.map(c => (
-                    <option key={c.code} value={c.code}>{c.flag} +{c.code}</option>
-                  ))}
-                </select>
+                <div className="relative group">
+                  <select 
+                    value={selectedCountry.code}
+                    onChange={(e) => {
+                      triggerHaptic('light');
+                      setSelectedCountry(COUNTRY_CODES.find(c => c.code === e.target.value) || COUNTRY_CODES[0]);
+                    }}
+                    className={cn(
+                      "h-14 px-4 rounded-2xl border appearance-none cursor-pointer focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all font-medium",
+                      isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-slate-50 border-slate-200"
+                    )}
+                  >
+                    {COUNTRY_CODES.map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} +{c.code}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="relative flex-1">
                   <input
                     type="tel"
@@ -224,18 +268,28 @@ const App: React.FC = () => {
                     }}
                     placeholder="98765 43210"
                     className={cn(
-                      "w-full p-3 rounded-xl border focus:ring-2 focus:ring-emerald-500 outline-none transition-all",
-                      isDarkMode ? "bg-slate-900 border-slate-700 placeholder:text-slate-600" : "bg-white border-slate-200"
+                      "w-full h-14 px-4 rounded-2xl border focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all font-medium",
+                      isDarkMode ? "bg-slate-900/80 border-slate-800 placeholder:text-slate-700" : "bg-white border-slate-200"
                     )}
                   />
-                  {error && <p className="text-red-500 text-[10px] mt-1 absolute left-1">{error}</p>}
+                  <AnimatePresence>
+                    {error && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-red-400 text-[10px] mt-1.5 absolute left-1 font-semibold"
+                      >
+                        {error}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </div>
                 <button
                   onClick={handlePaste}
-                  title="Paste from clipboard"
                   className={cn(
-                    "p-3 rounded-xl border transition-all active:scale-95 flex items-center justify-center",
-                    isDarkMode ? "bg-slate-900 border-slate-700 hover:bg-slate-800" : "bg-white border-slate-200 hover:bg-slate-50"
+                    "h-14 w-14 rounded-2xl border transition-all active:scale-90 flex items-center justify-center tap-highlight-none",
+                    isDarkMode ? "bg-slate-900/80 border-slate-800 hover:bg-slate-800" : "bg-white border-slate-200 hover:bg-slate-50"
                   )}
                 >
                   <ClipboardPaste size={20} className="text-emerald-500" />
@@ -243,138 +297,229 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Message Prefill */}
-            <div className="space-y-2 pt-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                <Type size={12} /> Message (Optional)
-              </label>
+            {/* Message Group */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center px-1">
+                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 flex items-center gap-2">
+                  <Type size={10} className="text-emerald-500" /> Message
+                </label>
+                <span className="text-[10px] text-slate-600 font-mono">{message.length}/500</span>
+              </div>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Hello, I'd like to..."
-                rows={2}
+                placeholder="Hello! Let's chat..."
+                rows={3}
+                maxLength={500}
                 className={cn(
-                  "w-full p-3 rounded-xl border focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none",
-                  isDarkMode ? "bg-slate-900 border-slate-700 placeholder:text-slate-600" : "bg-white border-slate-200"
+                  "w-full p-4 rounded-2xl border focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all resize-none font-medium",
+                  isDarkMode ? "bg-slate-900/80 border-slate-800 placeholder:text-slate-700" : "bg-white border-slate-200"
                 )}
               />
+              
+              {/* Templates */}
+              <div className="flex gap-2 overflow-x-auto py-1 no-scrollbar -mx-1 px-1">
+                {TEMPLATES.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setMessage(t);
+                    }}
+                    className={cn(
+                      "whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all active:scale-95",
+                      isDarkMode ? "bg-slate-900/50 border-slate-800 text-slate-400 hover:text-emerald-400" : "bg-slate-100 border-slate-200 text-slate-600"
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Actions */}
-            <div className="grid grid-cols-5 gap-2 pt-2">
+            {/* Action Grid */}
+            <div className="grid grid-cols-6 gap-2 pt-2">
               <button
                 onClick={() => handleAction('message')}
-                className="col-span-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                className="col-span-4 h-14 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 tap-highlight-none"
               >
-                <Send size={18} /> Send on WhatsApp
+                <Send size={18} /> Send Message
               </button>
               <button
                 onClick={() => handleAction('qr')}
+                title="Generate QR Code"
                 className={cn(
-                  "flex items-center justify-center rounded-xl border transition-all active:scale-95",
-                  isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"
+                  "h-14 rounded-2xl border transition-all active:scale-90 flex items-center justify-center tap-highlight-none",
+                  isDarkMode ? "border-slate-800 bg-slate-900/80 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"
                 )}
               >
-                <QrCode size={20} />
+                <QrCode size={20} className="text-emerald-500" />
+              </button>
+              <button
+                onClick={handleShare}
+                title="Share Link"
+                className={cn(
+                  "h-14 rounded-2xl border transition-all active:scale-90 flex items-center justify-center tap-highlight-none",
+                  isDarkMode ? "border-slate-800 bg-slate-900/80 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                <Share2 size={20} className="text-blue-400" />
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Recent Section */}
-        {recent.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
-                <History size={12} /> Recent Chats
-              </span>
-              <button 
-                onClick={async () => {
-                  setRecent([]);
-                  localStorage.removeItem('recent_contacts');
-                  if (user) await user.update({ unsafeMetadata: { recent: [] } });
-                }}
-                className="text-[10px] hover:text-red-500 transition-colors"
-              >
-                Clear All
-              </button>
-            </div>
-            <div className="grid gap-2">
-              {recent.map((contact) => (
-                <div 
-                  key={contact.phone}
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-2xl border group transition-all",
-                    isDarkMode ? "bg-slate-900/50 border-slate-800 hover:border-emerald-500/50" : "bg-white border-slate-100 hover:border-emerald-500/50"
-                  )}
+        <AnimatePresence>
+          {recent.length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-4 px-1"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 flex items-center gap-2">
+                  <History size={10} className="text-emerald-500" /> Recent Activity
+                </span>
+                <button 
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    setRecent([]);
+                    localStorage.removeItem('recent_contacts');
+                  }}
+                  className="text-[10px] font-bold text-slate-600 hover:text-red-400 transition-colors"
                 >
-                  <button 
-                    onClick={() => setPhone(contact.phone)}
-                    className="flex items-center gap-3 flex-1 text-left"
+                  Clear All
+                </button>
+              </div>
+              
+              <div className="space-y-2">
+                {recent.map((contact, idx) => (
+                  <motion.div 
+                    key={contact.phone}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className={cn(
+                      "flex items-center justify-between p-4 rounded-3xl border group transition-all relative overflow-hidden",
+                      isDarkMode ? "bg-slate-900/40 border-slate-900/50 hover:border-emerald-500/30" : "bg-white border-slate-100 shadow-sm"
+                    )}
                   >
-                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-xs">
-                      {contact.phone.slice(-2)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">+{contact.phone}</p>
-                      <p className="text-[10px] text-slate-500">
-                        {new Date(contact.timestamp).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </button>
-                  <button 
-                    onClick={() => deleteRecent(contact.phone)}
-                    className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-500 transition-all"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                    <button 
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setPhone(contact.phone);
+                      }}
+                      className="flex items-center gap-4 flex-1 text-left tap-highlight-none"
+                    >
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-xs font-bold">
+                        {contact.phone.slice(-2)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold tracking-tight">+{contact.phone}</p>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          {new Date(contact.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(contact.timestamp).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </button>
+                    <button 
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        const updated = recent.filter(c => c.phone !== contact.phone);
+                        setRecent(updated);
+                        localStorage.setItem('recent_contacts', JSON.stringify(updated));
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-2 text-slate-600 hover:text-red-400 transition-all tap-highlight-none"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Footer Controls */}
-        <div className="flex items-center justify-center gap-4 text-slate-500 pt-4">
+        <div className="flex items-center justify-center gap-6 pt-4">
           <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 hover:text-emerald-500 transition-colors"
+            onClick={() => {
+              triggerHaptic('light');
+              setIsDarkMode(!isDarkMode);
+            }}
+            className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-emerald-500 transition-colors px-4 py-2 rounded-full border border-transparent hover:border-slate-800 tap-highlight-none"
           >
-            <Settings size={20} />
+            <Settings size={14} /> Theme
           </button>
+          <div className="w-px h-3 bg-slate-800" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 flex items-center gap-2">
+            <Zap size={10} className="text-emerald-500" /> Pro Version
+          </p>
         </div>
-      </div>
+      </motion.div>
 
-      {/* QR Modal */}
-      {showQR && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full space-y-6 text-center relative shadow-2xl">
-            <button 
-              onClick={() => setShowQR(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 transition-colors"
+      {/* Modern QR Bottom Sheet Modal */}
+      <AnimatePresence>
+        {showQR && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 max-w-sm w-full space-y-6 text-center relative shadow-2xl"
             >
-              <X size={24} />
-            </button>
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold text-slate-900">Scan to Chat</h3>
-              <p className="text-sm text-slate-500">Share this QR code with others to start a chat with +{cleanAndValidate(phone).cleaned}</p>
-            </div>
-            <div className="flex justify-center p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-              <QRCodeSVG 
-                value={`https://wa.me/${cleanAndValidate(phone).cleaned}${message ? `?text=${encodeURIComponent(message)}` : ''}`} 
-                size={200}
-                fgColor="#0f172a"
-              />
-            </div>
-            <button 
-              onClick={() => setShowQR(false)}
-              className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all"
-            >
-              Done
-            </button>
+              <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-4 sm:hidden" />
+              <button 
+                onClick={() => {
+                  triggerHaptic('light');
+                  setShowQR(false);
+                }}
+                className="absolute top-6 right-6 text-slate-300 hover:text-slate-900 transition-colors p-2 tap-highlight-none"
+              >
+                <X size={24} />
+              </button>
+              
+              <div className="space-y-2 pt-2">
+                <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto mb-2">
+                  <QrCode size={24} className="text-emerald-500" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Scan to Chat</h3>
+                <p className="text-xs text-slate-500 leading-relaxed px-4">
+                  Point your camera at this code to start a chat with <span className="font-bold text-slate-900">+{cleanAndValidate(phone).cleaned}</span>
+                </p>
+              </div>
+
+              <div className="flex justify-center p-6 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 relative group">
+                <QRCodeSVG 
+                  value={`https://wa.me/${cleanAndValidate(phone).cleaned}${message ? `?text=${encodeURIComponent(message)}` : ''}`} 
+                  size={200}
+                  fgColor="#0f172a"
+                  includeMargin={false}
+                />
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 backdrop-blur-sm rounded-[2rem]">
+                  <Sparkles className="text-emerald-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={handleShare}
+                  className="bg-slate-100 text-slate-900 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all flex items-center justify-center gap-2 text-sm tap-highlight-none"
+                >
+                  <Share2 size={18} /> Share
+                </button>
+                <button 
+                  onClick={() => setShowQR(false)}
+                  className="bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition-all text-sm tap-highlight-none"
+                >
+                  Done
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 };
