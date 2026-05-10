@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+import { Contacts } from '@capacitor-community/contacts';
 import { RecentContact, ValidationResult, CountryCode } from '../types';
 import { COUNTRY_CODES } from '../constants';
 
@@ -12,15 +14,56 @@ export const useWhatsApp = () => {
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(COUNTRY_CODES[0]);
   const [recent, setRecent] = useState<RecentContact[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [callLog, setCallLog] = useState<any[]>([]);
 
-  // Haptic Feedback Utility
-  const triggerHaptic = (type: 'light' | 'medium' | 'success' = 'light') => {
-    if (!window.navigator.vibrate) return;
-    
-    switch(type) {
-      case 'light': window.navigator.vibrate(10); break;
-      case 'medium': window.navigator.vibrate(20); break;
-      case 'success': window.navigator.vibrate([10, 30, 10]); break;
+  // Native Call Log Fetching (Requires Native Bridge on Android)
+  const getCallLogs = async () => {
+    try {
+      // Note: This requires a custom native bridge or a call-log plugin
+      // For now, we fetch contacts as a base, but in native Android Studio 
+      // we would use the READ_CALL_LOG permission.
+      console.log("Fetching call logs...");
+    } catch (e) {
+      console.warn("Call logs not available");
+    }
+  };
+
+  // Native Contacts Fetching
+  const getContacts = async () => {
+    try {
+      const permission = await Contacts.requestPermissions();
+      if (permission.contacts === 'granted') {
+        const result = await Contacts.getContacts({
+          projection: {
+            name: true,
+            phones: true,
+          }
+        });
+        setContacts(result.contacts);
+      }
+    } catch (e) {
+      console.warn("Contacts not available or permission denied");
+    }
+  };
+
+  // Native Haptic Feedback with Web Fallback
+  const triggerHaptic = async (type: 'light' | 'medium' | 'success' = 'light') => {
+    try {
+      // Try Native Capacitor Haptics first
+      switch(type) {
+        case 'light': await Haptics.impact({ style: ImpactStyle.Light }); break;
+        case 'medium': await Haptics.impact({ style: ImpactStyle.Medium }); break;
+        case 'success': await Haptics.notification({ type: NotificationType.Success }); break;
+      }
+    } catch (e) {
+      // Fallback to standard web vibration
+      if (!window.navigator.vibrate) return;
+      switch(type) {
+        case 'light': window.navigator.vibrate(10); break;
+        case 'medium': window.navigator.vibrate(20); break;
+        case 'success': window.navigator.vibrate([10, 30, 10]); break;
+      }
     }
   };
 
@@ -84,5 +127,9 @@ export const useWhatsApp = () => {
     triggerHaptic,
     saveContact,
     validationResult,
+    contacts,
+    getContacts,
+    callLog,
+    getCallLogs,
   };
 };

@@ -12,6 +12,9 @@ import {
   UserButton 
 } from '@clerk/clerk-react';
 import { motion } from 'framer-motion';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { SplashScreen } from '@capacitor/splash-screen';
+import { useEffect } from 'react';
 
 // Hooks & Utils
 import { useWhatsApp } from './hooks/useWhatsApp';
@@ -22,6 +25,7 @@ import { PhoneInput } from './components/PhoneInput';
 import { MessageInput } from './components/MessageInput';
 import { ActionGrid } from './components/ActionGrid';
 import { HistorySection } from './components/HistorySection';
+import { ContactsSection } from './components/ContactsSection';
 import { QRModal } from './components/QRModal';
 
 const App: React.FC = () => {
@@ -41,9 +45,31 @@ const App: React.FC = () => {
     triggerHaptic,
     saveContact,
     validationResult,
+    contacts,
+    getContacts,
   } = useWhatsApp();
 
   const [showQR, setShowQR] = useState(false);
+  const [activeTab, setActiveTab] = useState<'recent' | 'contacts'>('recent');
+
+  // Initialize Native Features (Status Bar & Splash Screen)
+  useEffect(() => {
+    const initNative = async () => {
+      try {
+        await StatusBar.setStyle({ style: isDarkMode ? Style.Dark : Style.Light });
+        if (window.navigator.userAgent.toLowerCase().includes('android')) {
+          await StatusBar.setBackgroundColor({ color: isDarkMode ? '#0f172a' : '#f8fafc' });
+        }
+        await SplashScreen.hide();
+        
+        // Fetch contacts if available
+        getContacts();
+      } catch (e) {
+        console.log("Running in browser, skipping native initialization");
+      }
+    };
+    initNative();
+  }, [isDarkMode]);
 
   const handlePaste = async () => {
     triggerHaptic('light');
@@ -184,21 +210,64 @@ const App: React.FC = () => {
           </div>
         </motion.div>
 
-        <HistorySection 
-          recent={recent}
-          onSelect={setPhone}
-          onDelete={(num) => {
-            const updated = recent.filter(c => c.phone !== num);
-            setRecent(updated);
-            localStorage.setItem('recent_contacts', JSON.stringify(updated));
-          }}
-          onClearAll={() => {
-            setRecent([]);
-            localStorage.removeItem('recent_contacts');
-          }}
-          isDarkMode={isDarkMode}
-          triggerHaptic={triggerHaptic}
-        />
+        {/* Tabs for Recent / Contacts / Calls */}
+        <div className="flex gap-2 p-1 bg-slate-900/40 rounded-2xl border border-slate-800/50">
+          {[
+            { id: 'recent', label: 'Recent' },
+            { id: 'contacts', label: 'Contacts' },
+            { id: 'calls', label: 'Calls' }
+          ].map((tab) => (
+            <button 
+              key={tab.id}
+              onClick={() => { triggerHaptic('light'); setActiveTab(tab.id as any); }}
+              className={cn(
+                "flex-1 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
+                activeTab === tab.id ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <motion.div layout>
+          {activeTab === 'recent' && (
+            <HistorySection 
+              recent={recent}
+              onSelect={setPhone}
+              onDelete={(num) => {
+                const updated = recent.filter(c => c.phone !== num);
+                setRecent(updated);
+                localStorage.setItem('recent_contacts', JSON.stringify(updated));
+              }}
+              onClearAll={() => {
+                setRecent([]);
+                localStorage.removeItem('recent_contacts');
+              }}
+              isDarkMode={isDarkMode}
+              triggerHaptic={triggerHaptic}
+            />
+          )}
+          {activeTab === 'contacts' && (
+            <ContactsSection 
+              contacts={contacts}
+              onSelect={setPhone}
+              isDarkMode={isDarkMode}
+              triggerHaptic={triggerHaptic}
+            />
+          )}
+          {activeTab === 'calls' && (
+            <div className="text-center py-12 space-y-4">
+              <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto text-emerald-500">
+                <Settings size={32} className="animate-spin-slow" />
+              </div>
+              <p className="text-sm font-bold">Android Call Log Bridge Required</p>
+              <p className="text-xs text-slate-500 px-8 leading-relaxed">
+                To see your actual phone calls here, you need to add the native CallLog bridge in Android Studio.
+              </p>
+            </div>
+          )}
+        </motion.div>
 
         {/* Footer Controls */}
         <div className="flex items-center justify-center gap-6 pt-4">
@@ -228,6 +297,7 @@ const App: React.FC = () => {
       />
     </div>
   );
+
 };
 
 export default App;

@@ -2,7 +2,7 @@ import React from 'react';
 import { Phone, ClipboardPaste } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { COUNTRY_CODES } from '../constants';
-import { CountryCode, ValidationResult } from '../types';
+import { CountryCode } from '../types';
 import { cn } from '../lib/utils';
 
 interface PhoneInputProps {
